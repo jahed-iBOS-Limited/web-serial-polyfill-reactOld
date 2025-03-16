@@ -15,7 +15,7 @@ let writer = null;
 const WeightScale = () => {
   const [connectedPort, setConnectedPort] = useState(null);
   const [selectedBusinessUnit] = useState({
-    value: 0,
+    value: 224,
     label: '',
   });
 
