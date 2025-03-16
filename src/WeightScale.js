@@ -237,7 +237,7 @@ const WeightScale = () => {
   };
   return (
     <div>
-      <h1>Weight Scale</h1>
+      <h1>Weight Scale 1</h1>
       <h2>{portTitleHandler()}</h2>
       <h3>{weight}</h3>
       <button onClick={connectHandler}>Connect</button>
