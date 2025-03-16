@@ -1,5 +1,4 @@
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { serial as polyfill } from 'web-serial-polyfill';
 
 const magnumSteelUnitId = 171;
@@ -15,8 +14,13 @@ let writer = null;
 
 const WeightScale = () => {
   const [connectedPort, setConnectedPort] = useState(null);
+  const [selectedBusinessUnit] = useState({
+    value: 224,
+    label: '',
+  });
+
   const [weight, setWeight] = useState(0);
-  const [isConnected, setIsConnected] = useState(false);
+
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
@@ -31,23 +35,25 @@ const WeightScale = () => {
   const getSelectedPort = async () => {
     try {
       const serial = usePolyfill ? polyfill : navigator.serial;
-      console.log(serial, 'serial');
-      console.log(navigator.serial, 'navigator.serial');
-      console.log(polyfill, 'polyfill');
-      const port = await serial.requestPort({});
-      console.log(port, 'port');
+      let port = await serial.requestPort({});
       setConnectedPort(port);
       return port;
-    } catch (error) {
-      console.log(error, 'error in getting port');
-    }
+    } catch (error) {}
   };
 
   const connectHandler = async () => {
     closePort();
     const oldMachineOptions = {
-      baudRate: 1200,
-      baudrate: 1200,
+      baudRate: [magnumSteelUnitId, isPatUnitId].includes(
+        selectedBusinessUnit?.value,
+      )
+        ? 9600
+        : 1200,
+      baudrate: [magnumSteelUnitId, isPatUnitId].includes(
+        selectedBusinessUnit?.value,
+      )
+        ? 9600
+        : 1200,
       bufferSize: 8192,
       dataBits: 7,
       databits: 7,
@@ -71,20 +77,17 @@ const WeightScale = () => {
       stopbits: 1,
     };
 
-    const port = await getSelectedPort();
+    let port = await getSelectedPort();
     if (!port) {
       return;
     }
-    const info = port?.getInfo();
+    let info = port?.getInfo();
     console.log(info, 'info');
     try {
       await port.open(
         isOldMachine(info) ? oldMachineOptions : newMachineOptions,
       );
-      setIsConnected(true);
-    } catch (error) {
-      console.log(error, 'error in opening port');
-    }
+    } catch (error) {}
     while (port && port.readable) {
       reader = port?.readable?.getReader();
       try {
@@ -95,33 +98,49 @@ const WeightScale = () => {
             break;
           }
           if (value) {
-            const info = port?.getInfo();
+            let info = port?.getInfo();
             if (isOldMachine(info)) {
               // old machine
-              const newValue = decoder.decode(value);
+              let newValue = decoder.decode(value);
               weightValue += newValue;
-              const replacedValue = weightValue.replace(/[^ -~]+/g, ''); // remove stx string
-              const splittedValue = replacedValue.split(' ');
+              let replacedValue = weightValue.replace(/[^ -~]+/g, ''); // remove stx string
+              let splittedValue = replacedValue.split(' ');
               console.log('old machine running', splittedValue);
 
               splittedValue?.length > 0 &&
                 splittedValue.forEach((item) => {
                   if (item?.length === 7 && item?.[0] === '+') {
-                    const newValue = item.substring(1, 7);
+                    let newValue = item.substring(1, 7);
                     setWeight(Number(newValue));
                   }
                 });
             } else {
               // new machine
-              const newValue = decoder.decode(value);
-              const replacedValue = newValue.replace(/[^ -~]+/g, ''); // remove stx string
+              let newValue = decoder.decode(value);
+              let replacedValue = newValue.replace(/[^ -~]+/g, ''); // remove stx string
 
-              const newReplacedValue = replacedValue.replace(/[a-zA-Z]/, '8');
-              const replacedValueNumber = Number(newReplacedValue);
-              const actualValue = replacedValueNumber / 1000;
-              console.log('new machine running', actualValue);
-              if (actualValue > 0) {
-                setWeight(actualValue.toFixed());
+              if (
+                selectedBusinessUnit?.value === essentialUnitId ||
+                selectedBusinessUnit?.value === kofilRazzakUnitId ||
+                selectedBusinessUnit?.value === magnumSteelUnitId ||
+                selectedBusinessUnit.value === isPatUnitId
+              ) {
+                let newReplacedValue = replacedValue.replace(/[a-zA-Z]/, '8');
+                let replacedValueNumber = Number(newReplacedValue);
+                let actualValue = replacedValueNumber / 1000;
+                console.log('new machine running', actualValue);
+                if (actualValue > 0) {
+                  setWeight(actualValue.toFixed());
+                }
+              } else {
+                let splittedValue = replacedValue.split(' ');
+                console.log('new machine running', splittedValue);
+                splittedValue?.length > 0 &&
+                  splittedValue.forEach((item) => {
+                    if (item?.length === 5) {
+                      setWeight(Number(item));
+                    }
+                  });
               }
             }
           }
@@ -130,7 +149,6 @@ const WeightScale = () => {
           }
         }
       } catch (error) {
-        console.log(error, 'error in reading');
         closePort();
       } finally {
         if (reader) {
@@ -142,7 +160,7 @@ const WeightScale = () => {
   };
 
   const enterHandler = () => {
-    console.log(connectedPort, 'connectedPort');
+    console.log('Enter handler calling');
     weightValue = '';
     if (connectedPort?.writable == null) {
       console.warn(`unable to find writable port`);
@@ -154,7 +172,7 @@ const WeightScale = () => {
   };
 
   useEffect(() => {
-    const info = connectedPort?.getInfo();
+    let info = connectedPort?.getInfo();
     let interval = null;
     if (isOldMachine(info)) {
       interval = setInterval(() => {
@@ -179,39 +197,51 @@ const WeightScale = () => {
         if (connectedPort) {
           await connectedPort.close();
         }
+        setConnectedPort(null);
       }
-    } catch (error) {
-      console.log(error, 'error in closing port');
-    }
+    } catch (error) {}
   };
 
   useEffect(() => {
     closePort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const connectedPortInfo = useMemo(() => {
+    if (connectedPort?.getInfo) {
+      return connectedPort?.getInfo();
+    } else {
+      return null;
+    }
+  }, [connectedPort]);
+
+  console.log('connectedPortInfo', connectedPortInfo);
+
+  const portTitleHandler = () => {
+    let isOldMachineValue = isOldMachine(connectedPortInfo);
+    if (
+      selectedBusinessUnit?.value === magnumSteelUnitId ||
+      selectedBusinessUnit.value === isPatUnitId
+    ) {
+      if (isOldMachineValue) {
+        return 'ORION';
+      } else {
+        return 'SARTORIUS';
+      }
+    } else {
+      if (isOldMachineValue) {
+        return 'SCALE-1';
+      } else {
+        return 'SCALE-2';
+      }
+    }
+  };
   return (
-    <div className="main-weight-scale">
-      <div style={{ padding: '20px' }}>
-        <h2>Web Serial Polyfill Example</h2>
-        <button
-          onClick={() => {
-            connectHandler();
-          }}
-          disabled={isConnected}
-        >
-          {isConnected ? 'Connected' : 'Connect Serial'}
-        </button>
-        <button
-          onClick={(e) => {
-            connectHandler();
-          }}
-          disabled={!isConnected}
-        >
-          Disconnect
-        </button>
-        <pre>Received Data: {weight}</pre>
-      </div>
+    <div>
+      <h1>Weight Scale</h1>
+      <h2>{portTitleHandler()}</h2>
+      <h3>{weight}</h3>
+      <button onClick={connectHandler}>Connect</button>
+      <button onClick={closePort}>Disconnect</button>
     </div>
   );
 };
