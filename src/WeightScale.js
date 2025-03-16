@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { serial as polyfill } from 'web-serial-polyfill';
 
